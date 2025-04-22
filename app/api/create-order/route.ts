@@ -4,7 +4,10 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function POST(request: NextRequest) {
   try {
     // Parse request body
-    const { userId, coins, amount } = await request.json();
+    const body = await request.json();
+    const { userId, coins, amount } = body;
+
+    console.log('Create order request:', { userId, coins, amount });
 
     if (!userId || !coins || !amount) {
       return NextResponse.json(
@@ -28,8 +31,32 @@ export async function POST(request: NextRequest) {
     // Generate a unique order ID
     const orderId = `order_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
+    console.log('Creating Cashfree order with ID:', orderId);
+
     // Create order in Cashfree
-    const cashfreeResponse = await fetch('https://api.cashfree.com/pg/orders', {
+    const cashfreeUrl = 'https://api.cashfree.com/pg/orders';
+    console.log('Using Cashfree URL:', cashfreeUrl);
+    
+    const cashfreePayload = {
+      order_id: orderId,
+      order_amount: amount,
+      order_currency: 'INR',
+      customer_details: {
+        customer_id: userId,
+        customer_phone: '9999999999', 
+        customer_email: 'test@example.com'
+      },
+      order_meta: {
+        return_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment-status?order_id={order_id}&order_token={order_token}`
+      }
+    };
+    
+    console.log('Cashfree API credentials:', {
+      appId: process.env.CASHFREE_APP_ID?.substring(0, 5) + '...',
+      hasSecretKey: !!process.env.CASHFREE_SECRET_KEY
+    });
+    
+    const cashfreeResponse = await fetch(cashfreeUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -37,19 +64,7 @@ export async function POST(request: NextRequest) {
         'x-client-secret': process.env.CASHFREE_SECRET_KEY!,
         'x-api-version': '2022-09-01'
       },
-      body: JSON.stringify({
-        order_id: orderId,
-        order_amount: amount,
-        order_currency: 'INR',
-        customer_details: {
-          customer_id: userId,
-          customer_phone: '9999999999', // This should be dynamically retrieved in a production environment
-          customer_email: 'test@example.com' // This should be dynamically retrieved in a production environment
-        },
-        order_meta: {
-          return_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment-status?order_id={order_id}&order_token={order_token}`
-        }
-      })
+      body: JSON.stringify(cashfreePayload)
     });
 
     const cashfreeData = await cashfreeResponse.json();
@@ -61,6 +76,8 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    console.log('Cashfree response:', cashfreeData);
 
     // Store order in Supabase
     const { error } = await supabase
@@ -92,7 +109,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error in create-order API:', error);
     return NextResponse.json(
-      { error: 'Internal server error', details: error },
+      { error: 'Internal server error', details: String(error) },
       { status: 500 }
     );
   }
